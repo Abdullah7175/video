@@ -1,0 +1,527 @@
+"use client";
+import { useSession } from "next-auth/react";
+import { useEffect, useState } from "react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { 
+  Image as ImageIcon, 
+  Video, 
+  Download, 
+  Eye, 
+  Calendar,
+  FileText,
+  MapPin,
+  User,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  ArrowLeft
+} from "lucide-react";
+import Link from "next/link";
+import { Input } from "@/components/ui/input";
+
+export default function MyUploadsPage() {
+  const { data: session } = useSession();
+  const [uploads, setUploads] = useState({
+    images: [],
+    videos: [],
+    finalVideos: []
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('images');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(12);
+
+  // Check if user is editor role (VIDEO EDITOR - role 4)
+  const isEditorRole = (roleId) => {
+    return roleId === 4; // VIDEO EDITOR
+  };
+
+  // Get current tab data
+  const getCurrentTabData = () => {
+    if (activeTab === 'images') return uploads.images;
+    if (activeTab === 'videos') return uploads.videos;
+    if (activeTab === 'finalVideos') return uploads.finalVideos;
+    return [];
+  };
+
+  // Filter current tab data based on search
+  const filteredData = getCurrentTabData().filter(file => {
+    if (!searchTerm) return true;
+    return (
+      file.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      file.file_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      file.work_request_id?.toString().includes(searchTerm)
+    );
+  });
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredData.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentData = filteredData.slice(startIndex, endIndex);
+
+  // Pagination handlers
+  const goToPage = (page) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  };
+
+  const goToPreviousPage = () => {
+    setCurrentPage(prev => Math.max(1, prev - 1));
+  };
+
+  const goToNextPage = () => {
+    setCurrentPage(prev => Math.min(totalPages, prev + 1));
+  };
+
+  // Reset to page 1 when tab or search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchTerm]);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    
+    // Check if user has permission to view uploads
+    if (!isEditorRole(session.user.role)) {
+      setError('Access denied. Only Video Editors can view uploads.');
+      setLoading(false);
+      return;
+    }
+    
+    const fetchUploads = async () => {
+      try {
+        setLoading(true);
+        
+        // Fetch images uploaded by this user
+        const imagesRes = await fetch(`/api/images?creator_id=${session.user.id}&creator_type=socialmedia&limit=100`, {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        const imagesData = await imagesRes.json();
+        
+        // Fetch videos uploaded by this user
+        const videosRes = await fetch(`/api/videos?creator_id=${session.user.id}&creator_type=socialmedia&limit=100`, {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        const videosData = await videosRes.json();
+        
+        // Fetch final videos uploaded by this user
+        const finalVideosRes = await fetch(`/api/final-videos?creator_id=${session.user.id}&creator_type=socialmedia&limit=100`, {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+        const finalVideosData = await finalVideosRes.json();
+        
+        setUploads({
+          images: imagesData.data || [],
+          videos: videosData.data || [],
+          finalVideos: Array.isArray(finalVideosData) ? finalVideosData : []
+        });
+        
+        setLoading(false);
+      } catch (err) {
+        setError(err.message);
+        setLoading(false);
+      }
+    };
+
+    fetchUploads();
+  }, [session?.user?.id]);
+
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getFileTypeIcon = (fileType) => {
+    if (fileType?.startsWith('image/')) return <ImageIcon className="w-5 h-5" />;
+    if (fileType?.startsWith('video/')) return <Video className="w-5 h-5" />;
+    return <FileText className="w-5 h-5" />;
+  };
+
+  const renderFileCard = (file, type) => {
+    // Handle different file path formats
+    let fileUrl;
+    if (file.link) {
+      // If link starts with /uploads/, use it directly
+      fileUrl = file.link.startsWith('/uploads/') ? file.link : `/uploads/${file.link}`;
+    } else if (file.file_path) {
+      fileUrl = `/uploads/${file.file_path}`;
+    } else if (file.file_name) {
+      // Determine the correct subdirectory based on type
+      let subdir = 'images';
+      if (type === 'videos') subdir = 'videos';
+      if (type === 'finalVideos') subdir = 'final-videos';
+      fileUrl = `/uploads/${subdir}/${file.file_name}`;
+    } else {
+      fileUrl = '#';
+    }
+    
+    const isImage = file.file_type?.startsWith('image/') || type === 'images';
+    const isVideo = file.file_type?.startsWith('video/') || type === 'videos' || type === 'finalVideos';
+
+    return (
+      <Card key={file.id} className="p-4 hover:shadow-lg transition-shadow">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0">
+            {isImage ? (
+              <div className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden">
+                <img 
+                  src={fileUrl} 
+                  alt={file.description || 'Uploaded image'}
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'flex';
+                  }}
+                />
+                <div className="w-full h-full bg-gray-200 flex items-center justify-center" style={{display: 'none'}}>
+                  <ImageIcon className="w-8 h-8 text-gray-400" />
+                </div>
+              </div>
+            ) : (
+              <div className="w-20 h-20 bg-gray-100 rounded-lg flex items-center justify-center">
+                <Video className="w-8 h-8 text-gray-400" />
+              </div>
+            )}
+          </div>
+          
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between">
+              <div className="flex-1 min-w-0">
+                <h3 className="font-medium text-gray-900 truncate">
+                  {file.file_name || file.description || 'Untitled'}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1 line-clamp-2">
+                  {file.description || 'No description provided'}
+                </p>
+                
+                <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-1">
+                    {getFileTypeIcon(file.file_type)}
+                    <span>{formatFileSize(file.file_size || 0)}</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Calendar className="w-3 h-3" />
+                    <span>{formatDate(file.created_at || file.uploaded_at)}</span>
+                  </div>
+                  {file.work_request_id && (
+                    <div className="flex items-center gap-1">
+                      <FileText className="w-3 h-3" />
+                      <span>Request #{file.work_request_id}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {(file.latitude && file.longitude) && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-gray-500">
+                    <MapPin className="w-3 h-3" />
+                    <span>{parseFloat(file.latitude).toFixed(4)}, {parseFloat(file.longitude).toFixed(4)}</span>
+                  </div>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-2 ml-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (fileUrl !== '#') {
+                      window.open(fileUrl, '_blank');
+                    } else {
+                      alert('File not available');
+                    }
+                  }}
+                >
+                  <Eye className="w-4 h-4 mr-1" />
+                  View
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    if (fileUrl !== '#') {
+                      const link = document.createElement('a');
+                      link.href = fileUrl;
+                      link.download = file.file_name || file.link?.split('/').pop() || 'download';
+                      link.click();
+                    } else {
+                      alert('File not available');
+                    }
+                  }}
+                >
+                  <Download className="w-4 h-4 mr-1" />
+                  Download
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-10">
+        <div className="flex items-center justify-center h-96 text-lg">Loading your uploads...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-10">
+        <div className="flex items-center justify-center h-96">
+          <div className="text-center">
+            <div className="text-red-600 text-lg font-medium mb-2">Access Denied</div>
+            <div className="text-gray-600">{error}</div>
+            <Link href="/smagent" className="inline-block mt-4 text-blue-600 hover:text-blue-800">
+              ← Back to Dashboard
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const totalUploads = uploads.images.length + uploads.videos.length + uploads.finalVideos.length;
+
+  return (
+    <div className="container mx-auto px-4 py-10">
+      <div className="mb-8">
+        <div className="flex items-center gap-4 mb-4">
+          <Link href="/smagent" className="flex items-center gap-2 text-blue-600 hover:text-blue-800">
+            <ArrowLeft className="w-4 h-4" />
+            Back to Dashboard
+          </Link>
+        </div>
+        
+        <h1 className="text-3xl font-bold mb-2">My Uploads</h1>
+        <p className="text-gray-600">
+          View and manage all your uploaded files
+        </p>
+        
+        <div className="mt-4">
+          <Badge variant="secondary" className="text-sm">
+            Total Files: {totalUploads}
+          </Badge>
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <Card className="p-6 mb-6">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            placeholder="Search by description, file name, or request ID..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <div className="mt-4 text-sm text-gray-600">
+          Showing {currentData.length} of {filteredData.length} files
+          {searchTerm && ` matching "${searchTerm}"`}
+        </div>
+      </Card>
+
+      {/* Tab Navigation */}
+      <div className="mb-6">
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('images')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'images'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Images ({uploads.images.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('videos')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'videos'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Videos ({uploads.videos.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('finalVideos')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'finalVideos'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Final Videos ({uploads.finalVideos.length})
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="space-y-4">
+        {activeTab === 'images' && (
+          <div>
+            {uploads.images.length === 0 ? (
+              <Card className="p-8 text-center">
+                <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No images uploaded</h3>
+                <p className="text-gray-600 mb-4">You haven't uploaded any images yet.</p>
+                <Link href="/smagent/images/add">
+                  <Button>Upload Images</Button>
+                </Link>
+              </Card>
+            ) : filteredData.length === 0 ? (
+              <Card className="p-8 text-center">
+                <ImageIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+                <p className="text-gray-600 mb-4">Try adjusting your search term.</p>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {currentData.map(file => renderFileCard(file, 'images'))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'videos' && (
+          <div>
+            {uploads.videos.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No videos uploaded</h3>
+                <p className="text-gray-600 mb-4">You haven't uploaded any videos yet.</p>
+                <Link href="/smagent/videos/add">
+                  <Button>Upload Videos</Button>
+                </Link>
+              </Card>
+            ) : filteredData.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+                <p className="text-gray-600 mb-4">Try adjusting your search term.</p>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {currentData.map(file => renderFileCard(file, 'videos'))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'finalVideos' && (
+          <div>
+            {uploads.finalVideos.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No final videos uploaded</h3>
+                <p className="text-gray-600 mb-4">You haven't uploaded any final videos yet.</p>
+                <Link href="/smagent/final-videos/add">
+                  <Button>Upload Final Video</Button>
+                </Link>
+              </Card>
+            ) : filteredData.length === 0 ? (
+              <Card className="p-8 text-center">
+                <Video className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No results found</h3>
+                <p className="text-gray-600 mb-4">Try adjusting your search term.</p>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {currentData.map(file => renderFileCard(file, 'finalVideos'))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <Card className="p-4 mt-6">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              Page {currentPage} of {totalPages} ({filteredData.length} total files)
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToPreviousPage}
+                disabled={currentPage === 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Previous
+              </Button>
+              
+              {/* Page numbers */}
+              <div className="flex items-center gap-1">
+                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 5) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 2) {
+                    pageNum = totalPages - 4 + i;
+                  } else {
+                    pageNum = currentPage - 2 + i;
+                  }
+                  
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={currentPage === pageNum ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => goToPage(pageNum)}
+                      className="w-8 h-8 p-0"
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
+              </div>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToNextPage}
+                disabled={currentPage === totalPages}
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
