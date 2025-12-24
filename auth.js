@@ -223,7 +223,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   cookies: {
     sessionToken: {
-      name: `${process.env.NODE_ENV === 'production' ? '__Secure-' : ''}next-auth.session-token`,
+      // Use unique cookie name for Video Archiving to avoid conflicts with E-Filing
+      name: `${process.env.NODE_ENV === 'production' ? '__Secure-' : ''}video-archiving.session-token`,
       options: {
         httpOnly: true,
         sameSite: 'lax',
@@ -232,7 +233,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     },
     callbackUrl: {
-      name: `${process.env.NODE_ENV === 'production' ? '__Secure-' : ''}next-auth.callback-url`,
+      // Use unique cookie name for Video Archiving
+      name: `${process.env.NODE_ENV === 'production' ? '__Secure-' : ''}video-archiving.callback-url`,
       options: {
         httpOnly: true,
         sameSite: 'lax',
@@ -241,9 +243,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       },
     },
     csrfToken: {
+      // Use unique cookie name for Video Archiving
       // Use __Secure- instead of __Host- if behind a reverse proxy
       // __Host- requires exact host match and no domain, which can fail behind proxies
-      name: `${process.env.NODE_ENV === 'production' && !process.env.BEHIND_PROXY ? '__Host-' : process.env.NODE_ENV === 'production' ? '__Secure-' : ''}next-auth.csrf-token`,
+      name: `${process.env.NODE_ENV === 'production' && !process.env.BEHIND_PROXY ? '__Host-' : process.env.NODE_ENV === 'production' ? '__Secure-' : ''}video-archiving.csrf-token`,
       options: {
         httpOnly: true,
         sameSite: 'lax',
